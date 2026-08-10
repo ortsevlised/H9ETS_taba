@@ -5,5 +5,7 @@ __pycache__/
 dffd_dataset/
 data/
 runs/
-report_assets/
 tmp/
+
+deepfake_taba_project_plan.md
+report_sections/*_evolution.md
