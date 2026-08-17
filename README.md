@@ -16,18 +16,26 @@ py -3.13 -m venv .venv
 python -m pip install --upgrade pip
 ```
 
-Install the CUDA 12.8 PyTorch build and the remaining packages:
+Install the pinned packages. The requirements file uses the CUDA 12.8 PyTorch build used for the original runs:
 
 ```powershell
-python -m pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu128
-python -m pip install timm==1.0.28 codecarbon==3.3.0 grad-cam==1.5.5 scikit-learn==1.9.0 pandas==3.0.5 matplotlib==3.11.1 pillow==12.2.0 numpy==2.4.4
+python -m pip install -r requirements.txt
+python -m pip check
 ```
 
 The first run of each architecture downloads its ImageNet weights.
 
 ## DFFD data
 
-Request DFFD from the [official dataset page](https://cvlab.cse.msu.edu/dffd-dataset.html) and follow its licence conditions. The dataset is not stored in this repository.
+Request DFFD from the [official dataset page](https://cvlab.cse.msu.edu/dffd-dataset.html) and follow its licence conditions. The dataset is not stored in this repository. Download the seven image archives listed below and `scripts.zip`.
+
+The official split lists are inside `scripts.zip` under `data_lists/`. Copy them into the `_lists` directory expected by `build_manifest.py`:
+
+```powershell
+Expand-Archive -Path dffd_dataset\scripts.zip -DestinationPath dffd_dataset\official_scripts
+New-Item -ItemType Directory -Force -Path dffd_dataset\_lists | Out-Null
+Copy-Item dffd_dataset\official_scripts\data_lists\*.txt dffd_dataset\_lists\
+```
 
 Place the archives and official split lists in this structure:
 
@@ -44,6 +52,7 @@ dffd_dataset/
 |-- ffhq.zip
 |-- pggan_v1.zip
 |-- pggan_v2.zip
+|-- scripts.zip
 |-- stargan.zip
 |-- stylegan_celeba.zip
 `-- stylegan_ffhq.zip
@@ -58,6 +67,7 @@ Build the seeded manifests, then extract only the images referenced by them:
 ```powershell
 python scripts\build_manifest.py
 python scripts\extract_images.py
+Get-FileHash data\manifests\*.csv -Algorithm SHA256
 ```
 
 This creates:
@@ -68,6 +78,8 @@ This creates:
 - `data/images/` containing the selected images.
 
 The main sample contains 18,000 training images, 1,800 validation images and 9,000 test images. The manifest seed is fixed at 42.
+
+Compare the manifest hashes with `results/reference_metrics.json` before training. Matching hashes confirm that the same image records and splits were selected.
 
 ## Train the main models
 
@@ -90,6 +102,9 @@ Each run writes its checkpoint, training history and CodeCarbon record to `runs/
 ## Evaluate the main models
 
 ```powershell
+$models = @("mobilenet_v3_large", "efficientnet_b0", "xception")
+$seeds = @(0, 1, 2)
+
 foreach ($model in $models) {
     foreach ($seed in $seeds) {
         $run = "${model}_seed${seed}"
@@ -107,6 +122,7 @@ The inference benchmark loads a 1,000-image buffer onto the GPU and repeatedly e
 The generalisation check trains one run per model with StyleGAN-FFHQ removed from training and validation. It then evaluates the checkpoint on 1,000 StyleGAN-FFHQ images and 1,000 FFHQ real images.
 
 ```powershell
+$models = @("mobilenet_v3_large", "efficientnet_b0", "xception")
 $holdoutTrainManifest = "data\manifests\holdout_train_val_manifest.csv"
 $holdoutTestManifest = "data\manifests\generalisation_manifest.csv"
 
@@ -130,17 +146,15 @@ python scripts\consolidate.py
 
 `scripts/consolidate.py` expects the run names used above. It writes `runs/summary.json` with the per-seed results, means, sample standard deviations, decision-rule outcome and held-out-generator results.
 
-## Create the figures
+The original metrics and manifest hashes are stored in `results/reference_metrics.json`. Detection results should be close when the same data and package versions are used. Energy, emissions and latency will change with the hardware and background system load.
+
+## Run the explainability check
 
 ```powershell
-python scripts\make_dataset_examples_figure.py
-python scripts\make_figures.py
 python scripts\gradcam.py
 ```
 
-The report figures are written to `report_assets/`, while the Grad-CAM overlays and metadata are stored under `runs/gradcam/`.
-
-`scripts/make_example_figure.py` builds the report's six-image Grad-CAM panel from filenames produced by the original EfficientNet-B0 run. If a reproduced run selects different errors or produces slightly different rounded probabilities, update its `EXAMPLES` list before running it.
+This creates Grad-CAM overlays and metadata under `runs/gradcam/`. The command runs after the main models have been trained because it loads their checkpoints.
 
 ## Reproducibility notes
 

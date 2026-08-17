@@ -8,6 +8,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 IMAGES_DIR = ROOT / "data" / "images"
 OUT_DIR = ROOT / "report_assets"
+OUT_DIR.mkdir(exist_ok=True)
 
 # (archive_path, label)
 EXAMPLES = [
